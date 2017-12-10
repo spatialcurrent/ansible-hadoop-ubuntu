@@ -1,0 +1,206 @@
+---
+
+- name: Install Basic Libraries
+  become: yes
+  become_user: root
+  apt: name="{{ item }}" state=latest
+  with_items:
+    - ssh
+    - rsync
+
+- name: "Download Hadoop"
+  become: yes
+  become_user: root
+  get_url:
+    url: "{{ HADOOP_URL }}"
+    dest: "/opt/hadoop-2.6.5.tar.gz"
+    checksum: "{{ HADOOP_CHECKSUM }}"
+
+- name: "Unzip Hadoop"
+  become: yes
+  become_user: root
+  unarchive:
+    src: "/opt/hadoop-2.6.5.tar.gz"
+    dest: "/opt"
+    copy: no
+
+- name: "Force owner to root for /opt/hadoop-2.6.5"
+  become: yes
+  become_user: root
+  file:
+    path: "/opt/hadoop-2.6.5"
+    state: directory
+    recurse: yes
+    owner: root
+    group: root
+
+- name: "Stop Hadoop"
+  become: yes
+  become_user: "{{ HADOOP_USER }}"
+  shell: "{{ item }}"
+  args:
+    chdir: "{{ HADOOP_HOME }}"
+  with_items:
+    - ". .bashrc && sbin/stop-dfs.sh"
+    - ". .bashrc && sbin/stop-yarn.sh"
+  when: HADOOP_STOP | bool
+  failed_when: false
+
+- name: "Ensure {{ HADOOP_HOME }} exists"
+  become: yes
+  become_user: root
+  file:
+    path: "{{ HADOOP_HOME }}"
+    state: directory
+
+- name: "Copy hadoop from /opt into /usr/local"
+  become: yes
+  become_user: root
+  shell: "cp -R /opt/hadoop-2.6.5/* {{ HADOOP_HOME }}/"
+
+- name: Create Hadoop Group
+  become: yes
+  become_user: root
+  user:
+    name: "{{ HADOOP_USER }}"
+    state: present
+
+- name: Create Hadoop User
+  become: yes
+  become_user: root
+  user:
+    name: "{{ HADOOP_USER }}"
+    state: present
+    group: "{{ HADOOP_USER }}"
+    home: "{{ HADOOP_HOME }}"
+    shell: /bin/bash
+
+- name: "Check hadoop's .ssh directory"
+  become: yes
+  become_user: root
+  file:
+    path: "{{ HADOOP_HOME }}/.ssh"
+    state: directory
+    owner: "{{ HADOOP_USER }}"
+    group: "{{ HADOOP_USER }}"
+
+- name: "Copy over SSH Keys"
+  become: yes
+  become_user: root
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: "{{ HADOOP_USER }}"
+    group: "{{ HADOOP_USER }}"
+    mode: 0400
+  with_items:
+    - src: "secret/hadoop_id_rsa"
+      dest: "{{ HADOOP_HOME }}/.ssh/id_rsa"
+    - src: "secret/hadoop_id_rsa.pub"
+      dest: "{{ HADOOP_HOME }}/.ssh/id_rsa.pub"
+
+- name: "Copy over SSH Keys"
+  become: yes
+  become_user: root
+  shell: "cat {{ HADOOP_HOME }}/.ssh/id_rsa.pub > {{ HADOOP_HOME }}/.ssh/authorized_keys"
+
+- name: "Configure known_hosts for localhost"
+  become: yes
+  become_user: "{{ HADOOP_USER }}"
+  expect:
+    command: "ssh localhost"
+    responses:
+      (?i)(.*)Are you sure: "yes"
+      (?i)(.*)password: ""
+  args:
+    chdir: "{{ HADOOP_HOME }}"
+  failed_when: false
+
+- name: Configure known_hosts
+  become: yes
+  become_user: "{{ HADOOP_USER }}"
+  expect:
+    command: "ssh 0.0.0.0"
+    responses:
+      (?i)(.*)Are you sure: "yes"
+      (?i)(.*)password: ""
+  args:
+    chdir: "{{ HADOOP_HOME }}"
+  failed_when: false
+
+- name: "Configure known_hosts for {{ HADOOP_HOST }}"
+  become: yes
+  become_user: "{{ HADOOP_USER }}"
+  expect:
+    command: "ssh {{ HADOOP_HOST }}"
+    responses:
+      (?i)(.*)Are you sure: "yes"
+      (?i)(.*)password: ""
+  args:
+    chdir: "{{ HADOOP_HOME }}"
+  failed_when: false
+
+- name: "Configure hadoop user environment"
+  become: yes
+  become_user: root
+  template:
+    src: hadoop/bashrc.j2
+    dest: "{{ HADOOP_HOME }}/.bashrc"
+    owner: "{{ HADOOP_USER }}"
+    group: "{{ HADOOP_USER }}"
+    mode: 0755
+
+- name: "Configure hadoop environment"
+  become: yes
+  become_user: root
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: "{{ HADOOP_USER }}"
+    group: "{{ HADOOP_USER }}"
+    mode: "{{ item.mode }}"
+  with_items:
+    - src: hadoop/hadoop-env.sh.j2
+      dest: "{{ HADOOP_HOME }}/etc/hadoop/hadoop-env.sh"
+      mode: "0755"
+    - src: hadoop/core-site.xml.j2
+      dest: "{{ HADOOP_HOME }}/etc/hadoop/core-site.xml"
+      mode: "0644"
+    - src: hadoop/hdfs-site.xml.j2
+      dest: "{{ HADOOP_HOME }}/etc/hadoop/hdfs-site.xml"
+      mode: "0644"
+    - src: hadoop/mapred-site.xml.j2
+      dest: "{{ HADOOP_HOME }}/etc/hadoop/mapred-site.xml"
+      mode: "0644"
+
+- name: "Check owner is hadoop"
+  become: yes
+  become_user: root
+  file:
+    path: "{{ HADOOP_HOME }}"
+    state: directory
+    recurse: yes
+    owner: "{{ HADOOP_USER }}"
+    group: "{{ HADOOP_USER }}"
+
+- name: Format Name Node, if needed
+  become: yes
+  become_user: hadoop
+  expect:
+    command: "bin/hdfs namenode -format"
+    responses:
+      (?i)(.*)Re-format filesystem: "No"
+  args:
+    chdir: /usr/local/hadoop
+  failed_when: false
+
+- name: Start Hadoop
+  become: yes
+  become_user: "{{ HADOOP_USER }}"
+  shell: "{{ item }}"
+  args:
+    chdir: "{{ HADOOP_HOME }}"
+  with_items:
+    - ". {{ HADOOP_HOME }}/.bashrc && sbin/start-dfs.sh"
+    - ". {{ HADOOP_HOME }}/.bashrc && sbin/start-yarn.sh"
+  when: HADOOP_START | bool
