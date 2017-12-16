@@ -2,8 +2,10 @@
 
 HADOOP_USER: hadoop
 HADOOP_HOME: "/usr/local/hadoop"
+HADOOP_ID_RSA: "secret/hadoop_id_rsa"
 HADOOP_URL: "http://apache.cs.utah.edu/hadoop/common/hadoop-2.6.5/hadoop-2.6.5.tar.gz"
 HADOOP_CHECKSUM: "sha256:001AD18D4B6D0FE542B15DDADBA2D092BC97DF1C4D2D797381C8D12887691898"
 HADOOP_HOST: "localhost"
 HADOOP_STOP: true
 HADOOP_START: false
+HADOOP_JAVA_HOME: "/usr/lib/jvm/java-8-openjdk-amd64/jre/"

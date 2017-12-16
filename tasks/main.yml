@@ -36,13 +36,13 @@
 
 - name: "Stop Hadoop"
   become: yes
-  become_user: "{{ HADOOP_USER }}"
+  become_user: root
   shell: "{{ item }}"
   args:
     chdir: "{{ HADOOP_HOME }}"
   with_items:
-    - ". .bashrc && sbin/stop-dfs.sh"
-    - ". .bashrc && sbin/stop-yarn.sh"
+    - "su - {{ HADOOP_USER }} -c \". {{ HADOOP_HOME }}/.bashrc && {{ HADOOP_HOME }}/sbin/stop-dfs.sh\""
+    - "su - {{ HADOOP_USER }} -c \". {{ HADOOP_HOME }}/.bashrc && {{ HADOOP_HOME }}/sbin/stop-yarn.sh\""
   when: HADOOP_STOP | bool
   failed_when: false
 
@@ -94,9 +94,9 @@
     group: "{{ HADOOP_USER }}"
     mode: 0400
   with_items:
-    - src: "secret/hadoop_id_rsa"
+    - src: "{{ HADOOP_ID_RSA }}"
       dest: "{{ HADOOP_HOME }}/.ssh/id_rsa"
-    - src: "secret/hadoop_id_rsa.pub"
+    - src: "{{ HADOOP_ID_RSA }}.pub"
       dest: "{{ HADOOP_HOME }}/.ssh/id_rsa.pub"
 
 - name: "Copy over SSH Keys"
@@ -140,11 +140,23 @@
     chdir: "{{ HADOOP_HOME }}"
   failed_when: false
 
+- name: "Configure known_hosts for FQDN"
+  become: yes
+  become_user: "{{ HADOOP_USER }}"
+  expect:
+    command: "ssh $(hostname -f)"
+    responses:
+      (?i)(.*)Are you sure: "yes"
+      (?i)(.*)password: ""
+  args:
+    chdir: "{{ HADOOP_HOME }}"
+  failed_when: false
+
 - name: "Configure hadoop user environment"
   become: yes
   become_user: root
   template:
-    src: hadoop/bashrc.j2
+    src: bashrc.j2
     dest: "{{ HADOOP_HOME }}/.bashrc"
     owner: "{{ HADOOP_USER }}"
     group: "{{ HADOOP_USER }}"
@@ -160,16 +172,16 @@
     group: "{{ HADOOP_USER }}"
     mode: "{{ item.mode }}"
   with_items:
-    - src: hadoop/hadoop-env.sh.j2
+    - src: hadoop-env.sh.j2
       dest: "{{ HADOOP_HOME }}/etc/hadoop/hadoop-env.sh"
       mode: "0755"
-    - src: hadoop/core-site.xml.j2
+    - src: core-site.xml.j2
       dest: "{{ HADOOP_HOME }}/etc/hadoop/core-site.xml"
       mode: "0644"
-    - src: hadoop/hdfs-site.xml.j2
+    - src: hdfs-site.xml.j2
       dest: "{{ HADOOP_HOME }}/etc/hadoop/hdfs-site.xml"
       mode: "0644"
-    - src: hadoop/mapred-site.xml.j2
+    - src: mapred-site.xml.j2
       dest: "{{ HADOOP_HOME }}/etc/hadoop/mapred-site.xml"
       mode: "0644"
 
